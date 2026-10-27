@@ -96,6 +96,7 @@ Abrir http://localhost:5173
 | POST | `/api/auth/2fa/activar` | Sesión + CSRF | Activa TOTP si el código es válido |
 | GET | `/api/servicios` | Sesión | Lista los servicios |
 | POST | `/api/servicios` | Sesión + CSRF + admin | Crea un servicio |
+| PUT | `/api/servicios/:id` | Sesión + CSRF + admin | Edita un servicio (Desafío A) |
 | DELETE | `/api/servicios/:id` | Sesión + CSRF + admin | Elimina un servicio |
 
 Respuestas de seguridad: **401** sin sesión o credenciales inválidas, **403** sin permiso, correo no
@@ -152,11 +153,32 @@ npm run pruebas
 
 Pruebas adicionales del script: login correcto (200), validación de servicio inválido (400),
 eliminación por admin (200), activación de 2FA con código incorrecto (400) y registro con
-contraseña corta (400). Resultado: **19/19 correctas**.
+contraseña corta (400).
+
+### Desafío A – Edición de servicios
+
+| Prueba | Procedimiento | Esperado | Obtenido |
+|--------|---------------|----------|----------|
+| A1 | Usuario normal: `PUT /api/servicios/:id` | 403 | 403 ✔ |
+| A2 | Admin: `PUT` con datos válidos | 200 | 200 ✔ |
+| A3 | Admin: `PUT` con datos inválidos | 400 | 400 ✔ |
+| A4 | Admin: `PUT` de un id inexistente | 404 | 404 ✔ |
+
+Resultado total del script: **23/23 correctas**.
 
 > En P4 un script no puede escanear el QR, así que registra un secreto TOTP conocido en la base de
 > datos para generar el código como lo haría la app autenticadora. El flujo con QR se prueba
 > manualmente desde la interfaz.
+
+## Trabajo autónomo
+
+### Desafío A – Editar servicios
+
+`PUT /api/servicios/:id` usa los mismos middlewares que crear y eliminar (`auth`, `admin` y CSRF) y
+la misma función `servicioValido()` que `POST`, de modo que la validación no se duplica. El id se
+valida con `/^d+$/` y la consulta es parametrizada. En Vue, el botón **Editar** (visible solo para
+admin, pero protegido en el servidor) carga el servicio en el mismo formulario, que cambia a
+**Actualizar** y permite **Cancelar**.
 
 ## Interpretación de los controles
 

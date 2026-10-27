@@ -159,6 +159,15 @@ app.post('/api/servicios', auth, admin, async (req, res) => {
   res.status(201).json({ id: r.insertId })
 })
 
+app.put('/api/servicios/:id', auth, admin, async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'Id inválido' })
+  if (!servicioValido(req.body)) return res.status(400).json({ error: 'Datos inválidos' })
+  const { nombre, descripcion, precio } = req.body
+  const [r] = await pool.execute('UPDATE servicios SET nombre = ?, descripcion = ?, precio = ? WHERE id = ?',
+    [nombre.trim(), descripcion.trim(), Number(precio), req.params.id])
+  res.status(r.affectedRows ? 200 : 404).json({ mensaje: r.affectedRows ? 'Actualizado' : 'No existe' })
+})
+
 app.delete('/api/servicios/:id', auth, admin, async (req, res) => {
   if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'Id inválido' })
   const [r] = await pool.execute('DELETE FROM servicios WHERE id = ?', [req.params.id])

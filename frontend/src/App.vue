@@ -6,6 +6,7 @@ const usuario = ref(null), csrf = ref(''), mensaje = ref('')
 const nombre = ref(''), email = ref(''), password = ref(''), codigo = ref('')
 const qr = ref(''), servicios = ref([])
 const servicio = ref({ nombre: '', descripcion: '', precio: 0 })
+const editandoId = ref(null)
 
 // credentials: 'include' envía la cookie de sesión sin que JavaScript pueda leerla
 async function api(ruta, metodo = 'GET', datos = null) {
@@ -52,11 +53,26 @@ async function activar2fa() {
   mensaje.value = r.mensaje; qr.value = ''; codigo.value = ''
 }
 
-async function crear() {
-  await api('/servicios', 'POST', servicio.value)
-  servicio.value = { nombre: '', descripcion: '', precio: 0 }
-  mensaje.value = 'Servicio creado'
+async function guardarServicio() {
+  if (editandoId.value) {
+    await api('/servicios/' + editandoId.value, 'PUT', servicio.value)
+    mensaje.value = 'Servicio actualizado'
+  } else {
+    await api('/servicios', 'POST', servicio.value)
+    mensaje.value = 'Servicio creado'
+  }
+  cancelarEdicion()
   await listar()
+}
+
+function editar(s) {
+  editandoId.value = s.id
+  servicio.value = { nombre: s.nombre, descripcion: s.descripcion, precio: Number(s.precio) }
+}
+
+function cancelarEdicion() {
+  editandoId.value = null
+  servicio.value = { nombre: '', descripcion: '', precio: 0 }
 }
 
 async function eliminar(id) {
@@ -116,15 +132,17 @@ onMounted(async () => {
       <ul>
         <li v-for="s in servicios" :key="s.id">
           {{ s.nombre }} · ${{ Number(s.precio).toLocaleString('es-CL') }}
+          <button v-if="usuario.rol === 'admin'" class="secundario" @click="editar(s)">Editar</button>
           <button v-if="usuario.rol === 'admin'" class="peligro" @click="accion(() => eliminar(s.id))">Eliminar</button>
         </li>
       </ul>
       <div v-if="usuario.rol === 'admin'">
-        <h3>Nuevo servicio (solo administrador)</h3>
+        <h3>{{ editandoId ? 'Editar servicio' : 'Nuevo servicio' }} (solo administrador)</h3>
         <input v-model="servicio.nombre" placeholder="Nombre" />
         <input v-model="servicio.descripcion" placeholder="Descripción" />
         <input v-model.number="servicio.precio" type="number" min="0" placeholder="Precio" />
-        <button @click="accion(crear)">Guardar</button>
+        <button @click="accion(guardarServicio)">{{ editandoId ? 'Actualizar' : 'Guardar' }}</button>
+        <button v-if="editandoId" class="secundario" @click="cancelarEdicion">Cancelar</button>
       </div>
     </section>
   </main>

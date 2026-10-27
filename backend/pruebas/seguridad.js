@@ -124,6 +124,15 @@ async function main() {
     const idCreado = r.cuerpo.id
     r = await admin.pedir('/servicios', 'POST', { nombre: 'X', descripcion: 'corta', precio: -5 })
     registrar('VAL', 'Admin: POST con datos inválidos', 400, r.status, r.status === 400)
+    // Desafío A: edición con PUT
+    r = await usuario.pedir(`/servicios/${idCreado}`, 'PUT', { nombre: 'Editado', descripcion: 'Sin permisos', precio: 1 })
+    registrar('A1', 'Usuario normal: PUT /api/servicios/:id', 403, r.status, r.status === 403)
+    r = await admin.pedir(`/servicios/${idCreado}`, 'PUT', { nombre: 'Servicio editado', descripcion: 'Editado por las pruebas', precio: 2000 })
+    registrar('A2', 'Admin: PUT con datos válidos', 200, r.status, r.status === 200)
+    r = await admin.pedir(`/servicios/${idCreado}`, 'PUT', { nombre: 'X', descripcion: '', precio: 'abc' })
+    registrar('A3', 'Admin: PUT con datos inválidos', 400, r.status, r.status === 400)
+    r = await admin.pedir('/servicios/999999', 'PUT', { nombre: 'No existe', descripcion: 'Servicio inexistente', precio: 1 })
+    registrar('A4', 'Admin: PUT de un id inexistente', 404, r.status, r.status === 404)
     r = await admin.pedir(`/servicios/${idCreado}`, 'DELETE')
     registrar('DEL', 'Admin: DELETE del servicio creado', 200, r.status, r.status === 200)
 
