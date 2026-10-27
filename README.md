@@ -39,9 +39,11 @@ Ejecutar el script completo en MySQL Workbench o en la consola:
 
 ```bash
 mysql -u root -p < database/01_esquema.sql
+mysql -u root -p < database/02_recuperacion.sql
 ```
 
-Crea la base `iw_seguridad` con las tablas `usuarios` y `servicios` y dos servicios de ejemplo.
+`01_esquema.sql` crea la base `iw_seguridad` con las tablas `usuarios` y `servicios` y dos servicios
+de ejemplo. `02_recuperacion.sql` agrega las columnas del token de recuperación (Desafío B).
 
 ## Variables de entorno
 
@@ -90,7 +92,9 @@ Abrir http://localhost:5173
 | GET | `/api/auth/csrf` | Sesión | Token CSRF de la sesión |
 | POST | `/api/auth/registro` | Validación | Crea la cuenta (bcrypt) e imprime el enlace de verificación |
 | POST | `/api/auth/verificar` | Token de un solo uso | Marca el correo como verificado |
-| POST | `/api/auth/login` | Rate limit (5 / 15 min) | Inicia sesión; pide código TOTP si está activo |
+| POST | `/api/auth/login` | Rate limit (5 fallos / 15 min) | Inicia sesión; pide código TOTP si está activo |
+| POST | `/api/auth/recuperar` | Rate limit (5 / 15 min) | Genera el enlace de recuperación (Desafío B) |
+| POST | `/api/auth/restablecer` | Token de un solo uso (15 min) | Cambia la contraseña (Desafío B) |
 | POST | `/api/auth/logout` | Sesión + CSRF | Destruye la sesión |
 | POST | `/api/auth/2fa/preparar` | Sesión + CSRF | Genera el QR del segundo factor |
 | POST | `/api/auth/2fa/activar` | Sesión + CSRF | Activa TOTP si el código es válido |
@@ -164,7 +168,19 @@ contraseña corta (400).
 | A3 | Admin: `PUT` con datos inválidos | 400 | 400 ✔ |
 | A4 | Admin: `PUT` de un id inexistente | 404 | 404 ✔ |
 
-Resultado total del script: **23/23 correctas**.
+### Desafío B – Recuperación de contraseña
+
+| Prueba | Procedimiento | Esperado | Obtenido |
+|--------|---------------|----------|----------|
+| B1 | Solicitar recuperación con un correo inexistente y con uno registrado | Misma respuesta 200 | Igual ✔ |
+| B2 | Revisar `token_recuperacion_hash` en MySQL | Hash, no el token | SHA-256 ✔ |
+| B3 | Restablecer con contraseña de 5 caracteres | 400 | 400 ✔ |
+| B4 | Restablecer con el token válido | 200 | 200 ✔ |
+| B5 | Reutilizar el mismo token | 400 | 400 ✔ |
+| B6 | Login con la clave anterior y con la nueva | 401 y 200 | 401 y 200 ✔ |
+| B7 | Usar un token vencido (más de 15 minutos) | 400 | 400 ✔ |
+
+Resultado total del script: **30/30 correctas**.
 
 > En P4 un script no puede escanear el QR, así que registra un secreto TOTP conocido en la base de
 > datos para generar el código como lo haría la app autenticadora. El flujo con QR se prueba
@@ -179,6 +195,28 @@ la misma función `servicioValido()` que `POST`, de modo que la validación no s
 valida con `/^d+$/` y la consulta es parametrizada. En Vue, el botón **Editar** (visible solo para
 admin, pero protegido en el servidor) carga el servicio en el mismo formulario, que cambia a
 **Actualizar** y permite **Cancelar**.
+
+### Desafío B – Recuperación de contraseña
+
+1. En la pantalla de ingreso se escribe el correo y se pulsa **Olvidé mi contraseña**.
+2. `POST /api/auth/recuperar` genera 32 bytes aleatorios (`crypto.randomBytes`), guarda solo su
+   hash SHA-256 con vencimiento de **15 minutos** e imprime el enlace
+   `http://localhost:5173/restablecer?token=...` en la consola del backend.
+3. Al abrir el enlace, Vue guarda el token en memoria, lo quita de la URL y muestra el formulario
+   **Restablecer contraseña**.
+4. `POST /api/auth/restablecer` exige 12+ caracteres, guarda el nuevo hash bcrypt y **borra el token**
+   en la misma consulta, por lo que es de un solo uso.
+
+Decisiones de seguridad: la respuesta es la misma exista o no el correo (no revela qué cuentas
+existen), la ruta tiene su propio rate limit y en la base nunca queda el token original.
+
+### Ajuste al rate limit del login
+
+Al probar el Desafío B, la API respondió **429** a un usuario con la contraseña correcta: el límite de
+la guía contaba *todos* los intentos, incluidos los exitosos, así que 5 ingresos correctos en 15
+minutos bloqueaban a una persona legítima. Se agregó `skipSuccessfulRequests: true`: ahora solo
+cuentan los intentos fallidos, que es lo que describe la prueba P3, y P3 sigue respondiendo 429 al
+sexto intento incorrecto.
 
 ## Interpretación de los controles
 

@@ -7,6 +7,7 @@ const nombre = ref(''), email = ref(''), password = ref(''), codigo = ref('')
 const qr = ref(''), servicios = ref([])
 const servicio = ref({ nombre: '', descripcion: '', precio: 0 })
 const editandoId = ref(null)
+const tokenRecuperacion = ref(''), nuevaPassword = ref('')
 
 // credentials: 'include' envía la cookie de sesión sin que JavaScript pueda leerla
 async function api(ruta, metodo = 'GET', datos = null) {
@@ -42,6 +43,17 @@ async function login() {
   usuario.value = r.usuario; csrf.value = r.csrf
   password.value = ''; codigo.value = ''
   await listar()
+}
+
+async function recuperar() {
+  if (!email.value.trim()) { mensaje.value = 'Escriba su correo para recuperar la contraseña'; return }
+  mensaje.value = (await api('/auth/recuperar', 'POST', { email: email.value })).mensaje
+}
+
+async function restablecer() {
+  const r = await api('/auth/restablecer', 'POST', { token: tokenRecuperacion.value, password: nuevaPassword.value })
+  mensaje.value = r.mensaje + '. Ya puede iniciar sesión.'
+  tokenRecuperacion.value = ''; nuevaPassword.value = ''
 }
 
 async function listar() { servicios.value = await api('/servicios') }
@@ -95,7 +107,11 @@ onMounted(async () => {
     if (usuario.value) { csrf.value = (await api('/auth/csrf')).token; await listar() }
   } catch (e) { mensaje.value = 'No se pudo recuperar la sesión' }
   const token = new URLSearchParams(location.search).get('token')
-  if (token) {
+  if (token && location.pathname === '/restablecer') {
+    // El token queda solo en memoria hasta que se envíe la nueva contraseña
+    tokenRecuperacion.value = token
+    history.replaceState(null, '', '/')
+  } else if (token) {
     await accion(verificar)
     // Se quita el token de la URL para que no quede en el historial ni se reenvíe al recargar
     history.replaceState(null, '', '/')
@@ -108,7 +124,13 @@ onMounted(async () => {
     <h1>Gestión segura de servicios · IW600</h1>
     <p>Registro, autenticación, segundo factor y permisos en servidor.</p>
     <p role="status" class="mensaje" v-if="mensaje">{{ mensaje }}</p>
-    <section v-if="!usuario" class="panel">
+    <section v-if="tokenRecuperacion" class="panel">
+      <h2>Restablecer contraseña</h2>
+      <input v-model="nuevaPassword" type="password" placeholder="Nueva contraseña (12+ caracteres)" autocomplete="new-password" />
+      <button @click="accion(restablecer)">Guardar nueva contraseña</button>
+      <button class="secundario" @click="tokenRecuperacion = ''">Cancelar</button>
+    </section>
+    <section v-else-if="!usuario" class="panel">
       <h2>Registro / ingreso</h2>
       <input v-model="nombre" placeholder="Nombre (registro)" autocomplete="name" />
       <input v-model="email" type="email" placeholder="Correo" autocomplete="email" />
@@ -117,8 +139,9 @@ onMounted(async () => {
       <button @click="accion(registro)">Registrarme</button>
       <button @click="accion(login)">Iniciar sesión</button>
       <button @click="accion(verificar)">Verificar enlace de la URL</button>
+      <button class="secundario" @click="accion(recuperar)">Olvidé mi contraseña</button>
     </section>
-    <section v-else class="panel">
+    <section v-if="usuario" class="panel">
       <h2>Bienvenido, {{ usuario.nombre }} ({{ usuario.rol }})</h2>
       <button @click="accion(salir)">Cerrar sesión</button>
       <h3>Configurar segundo factor</h3>

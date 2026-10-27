@@ -30,10 +30,17 @@ app.use(session({
   }
 }))
 
+// Solo cuentan los intentos fallidos: un usuario legítimo no queda bloqueado por ingresar varias veces
 const loginLimit = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 5, standardHeaders: 'draft-8', legacyHeaders: false,
+  limit: 5, skipSuccessfulRequests: true, standardHeaders: 'draft-8', legacyHeaders: false,
   message: { error: 'Demasiados intentos. Intente más tarde.' }
+})
+
+const recuperarLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5, standardHeaders: 'draft-8', legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes. Intente más tarde.' }
 })
 
 function auth(req, res, next) {
@@ -116,6 +123,36 @@ app.post('/api/auth/login', loginLimit, async (req, res) => {
     req.session.csrf = crypto.randomBytes(24).toString('hex')
     res.json({ usuario: req.session.usuario, csrf: req.session.csrf })
   })
+})
+
+// Desafío B: recuperación de contraseña con token de un solo uso
+app.post('/api/auth/recuperar', recuperarLimit, async (req, res) => {
+  const email = String(req.body.email || '').toLowerCase().trim()
+  const token = crypto.randomBytes(32).toString('hex')
+  const [r] = await pool.execute(`UPDATE usuarios SET token_recuperacion_hash = ?,
+    token_recuperacion_expira = DATE_ADD(NOW(), INTERVAL 15 MINUTE) WHERE email = ?`,
+    [sha256(token), email])
+  if (r.affectedRows)
+    console.log('ENLACE RECUPERACIÓN SOLO LABORATORIO:',
+      'http://localhost:5173/restablecer?token=' + token)
+  // Misma respuesta exista o no la cuenta, para no revelar qué correos están registrados
+  res.json({ mensaje: 'Si el correo está registrado, se generó un enlace de recuperación.' })
+})
+
+app.post('/api/auth/restablecer', async (req, res) => {
+  const token = String(req.body.token || '')
+  const password = req.body.password
+  if (!/^[a-f0-9]{64}$/.test(token)) return res.status(400).json({ error: 'Token inválido' })
+  if (typeof password !== 'string' || password.length < 12)
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 12 caracteres' })
+  const hash = await bcrypt.hash(password, 12)
+  // Al usarse, el token se borra: no puede reutilizarse
+  const [r] = await pool.execute(`UPDATE usuarios SET password_hash = ?,
+    token_recuperacion_hash = NULL, token_recuperacion_expira = NULL
+    WHERE token_recuperacion_hash = ? AND token_recuperacion_expira > NOW()`,
+    [hash, sha256(token)])
+  res.status(r.affectedRows ? 200 : 400)
+    .json(r.affectedRows ? { mensaje: 'Contraseña actualizada' } : { error: 'Enlace inválido o vencido' })
 })
 
 app.post('/api/auth/logout', auth, (req, res) => {

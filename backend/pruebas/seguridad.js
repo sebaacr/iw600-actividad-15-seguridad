@@ -153,6 +153,31 @@ async function main() {
     r = await conTotp.pedir('/auth/login', 'POST', { email: correoUsuario, password, codigo })
     registrar('P4b', 'Login con TOTP activo y código válido', 200, r.status, r.status === 200)
 
+    // Desafío B: recuperación de contraseña (cuenta admin, sin TOTP)
+    const nuevaClave = 'NuevaClaveDeLaboratorio-2026'
+    r = await cliente().pedir('/auth/recuperar', 'POST', { email: `no.existe.${sufijo}@ejemplo.test` })
+    const mensajeInexistente = r.cuerpo.mensaje
+    r = await cliente().pedir('/auth/recuperar', 'POST', { email: correoAdmin })
+    registrar('B1', 'Recuperar: misma respuesta exista o no el correo', '200 igual', r.status, r.status === 200 && r.cuerpo.mensaje === mensajeInexistente)
+    const tokenRec = ultimoEnlace(api, 'restablecer')
+    const [filasRec] = await pool.execute('SELECT token_recuperacion_hash h FROM usuarios WHERE email = ?', [correoAdmin])
+    registrar('B2', 'Token guardado como hash, no en texto plano', 'hash distinto', filasRec[0].h?.slice(0, 8) + '…', Boolean(tokenRec) && filasRec[0].h !== tokenRec && filasRec[0].h?.length === 64)
+    r = await cliente().pedir('/auth/restablecer', 'POST', { token: tokenRec, password: 'corta' })
+    registrar('B3', 'Restablecer con contraseña corta', 400, r.status, r.status === 400)
+    r = await cliente().pedir('/auth/restablecer', 'POST', { token: tokenRec, password: nuevaClave })
+    registrar('B4', 'Restablecer con token válido', 200, r.status, r.status === 200)
+    r = await cliente().pedir('/auth/restablecer', 'POST', { token: tokenRec, password: nuevaClave + 'x' })
+    registrar('B5', 'Reutilizar el mismo token', 400, r.status, r.status === 400)
+    r = await cliente().pedir('/auth/login', 'POST', { email: correoAdmin, password })
+    const loginViejo = r.status
+    r = await cliente().pedir('/auth/login', 'POST', { email: correoAdmin, password: nuevaClave })
+    registrar('B6', 'Login con clave anterior y con clave nueva', '401 y 200', `${loginViejo} y ${r.status}`, loginViejo === 401 && r.status === 200)
+    await cliente().pedir('/auth/recuperar', 'POST', { email: correoAdmin })
+    const tokenVencido = ultimoEnlace(api, 'restablecer')
+    await pool.execute('UPDATE usuarios SET token_recuperacion_expira = DATE_SUB(NOW(), INTERVAL 1 MINUTE) WHERE email = ?', [correoAdmin])
+    r = await cliente().pedir('/auth/restablecer', 'POST', { token: tokenVencido, password: nuevaClave })
+    registrar('B7', 'Restablecer con token vencido (más de 15 min)', 400, r.status, r.status === 400)
+
     // P9: inyección SQL en el nombre
     const nombreMalicioso = "O'Brien'); DROP TABLE usuarios; --"
     const correoSql = `sql.${sufijo}@ejemplo.test`
