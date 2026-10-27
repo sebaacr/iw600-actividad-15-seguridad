@@ -210,6 +210,18 @@ admin, pero protegido en el servidor) carga el servicio en el mismo formulario, 
 Decisiones de seguridad: la respuesta es la misma exista o no el correo (no revela qué cuentas
 existen), la ruta tiene su propio rate limit y en la base nunca queda el token original.
 
+### Desafío C – Matriz de riesgos
+
+Ver [docs/matriz-riesgos.md](docs/matriz-riesgos.md): 14 amenazas con activo, control, evidencia
+(prueba que lo demuestra) y riesgo residual. Los riesgos residuales más altos son la falta de HTTPS
+en el laboratorio, el uso de MemoryStore y el secreto TOTP en texto plano.
+
+### Desafío D – HTTPS y sesiones persistentes
+
+Ver [docs/despliegue-seguro.md](docs/despliegue-seguro.md): proxy inverso con TLS (Let's Encrypt),
+HSTS, `trust proxy` y cookie `Secure`; reemplazo de MemoryStore por `express-mysql-session` o Redis,
+y otros cambios necesarios antes de producción.
+
 ### Ajuste al rate limit del login
 
 Al probar el Desafío B, la API respondió **429** a un usuario con la contraseña correcta: el límite de
