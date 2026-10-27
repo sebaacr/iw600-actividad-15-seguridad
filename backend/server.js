@@ -6,6 +6,8 @@ const { rateLimit } = require('express-rate-limit')
 const bcrypt = require('bcryptjs')
 const mysql = require('mysql2/promise')
 const crypto = require('node:crypto')
+const speakeasy = require('speakeasy')
+const QRCode = require('qrcode')
 
 const app = express()
 const pool = mysql.createPool({
@@ -36,6 +38,13 @@ const loginLimit = rateLimit({
 
 function auth(req, res, next) {
   if (!req.session.usuario) return res.status(401).json({ error: 'Inicie sesión' })
+  next()
+}
+
+// El rol se lee de la sesión del servidor, nunca de datos enviados por el navegador
+function admin(req, res, next) {
+  if (req.session.usuario?.rol !== 'admin')
+    return res.status(403).json({ error: 'Acceso denegado' })
   next()
 }
 
@@ -95,6 +104,11 @@ app.post('/api/auth/login', loginLimit, async (req, res) => {
   const ok = u && await bcrypt.compare(password, u.password_hash)
   if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' })
   if (!u.email_verificado) return res.status(403).json({ error: 'Verifique su correo' })
+  if (u.totp_habilitado) {
+    const codigo = String(req.body.codigo || '')
+    if (!speakeasy.totp.verify({ secret: u.totp_secreto, encoding: 'base32', token: codigo, window: 1 }))
+      return res.status(401).json({ error: 'Código de segundo factor inválido' })
+  }
   // Nueva sesión tras el login para evitar fijación de sesión
   req.session.regenerate(err => {
     if (err) return res.status(500).json({ error: 'Error de sesión' })
@@ -108,9 +122,47 @@ app.post('/api/auth/logout', auth, (req, res) => {
   req.session.destroy(() => res.clearCookie('iw.sid').json({ mensaje: 'Sesión cerrada' }))
 })
 
+app.post('/api/auth/2fa/preparar', auth, async (req, res) => {
+  const secreto = speakeasy.generateSecret({ name: 'IW600:' + req.session.usuario.nombre })
+  // El secreto queda pendiente en la sesión hasta que el usuario confirme un código válido
+  req.session.totpPendiente = secreto.base32
+  res.json({ qr: await QRCode.toDataURL(secreto.otpauth_url) })
+})
+
+app.post('/api/auth/2fa/activar', auth, async (req, res) => {
+  const secret = req.session.totpPendiente
+  if (!secret || !speakeasy.totp.verify({ secret, encoding: 'base32',
+    token: String(req.body.codigo || ''), window: 1 }))
+    return res.status(400).json({ error: 'Código inválido' })
+  await pool.execute('UPDATE usuarios SET totp_secreto = ?, totp_habilitado = 1 WHERE id = ?',
+    [secret, req.session.usuario.id])
+  delete req.session.totpPendiente
+  res.json({ mensaje: 'Segundo factor activado' })
+})
+
+function servicioValido({ nombre, descripcion, precio }) {
+  return typeof nombre === 'string' && nombre.trim().length >= 3 &&
+    typeof descripcion === 'string' && descripcion.trim().length >= 5 &&
+    Number.isFinite(Number(precio)) && Number(precio) >= 0
+}
+
 app.get('/api/servicios', auth, async (req, res) => {
   const [rows] = await pool.execute('SELECT * FROM servicios ORDER BY id DESC')
   res.json(rows)
+})
+
+app.post('/api/servicios', auth, admin, async (req, res) => {
+  if (!servicioValido(req.body)) return res.status(400).json({ error: 'Datos inválidos' })
+  const { nombre, descripcion, precio } = req.body
+  const [r] = await pool.execute('INSERT INTO servicios (nombre, descripcion, precio) VALUES (?, ?, ?)',
+    [nombre.trim(), descripcion.trim(), Number(precio)])
+  res.status(201).json({ id: r.insertId })
+})
+
+app.delete('/api/servicios/:id', auth, admin, async (req, res) => {
+  if (!/^\d+$/.test(req.params.id)) return res.status(400).json({ error: 'Id inválido' })
+  const [r] = await pool.execute('DELETE FROM servicios WHERE id = ?', [req.params.id])
+  res.status(r.affectedRows ? 200 : 404).json({ mensaje: r.affectedRows ? 'Eliminado' : 'No existe' })
 })
 
 app.use((err, req, res, next) => {
