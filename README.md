@@ -230,6 +230,25 @@ minutos bloqueaban a una persona legítima. Se agregó `skipSuccessfulRequests: 
 cuentan los intentos fallidos, que es lo que describe la prueba P3, y P3 sigue respondiendo 429 al
 sexto intento incorrecto.
 
+## Capturas
+
+Las capturas no muestran contraseñas (los campos se vacían antes de capturar), códigos TOTP ni cookies.
+El QR del segundo factor aparece **difuminado** porque contiene el secreto TOTP.
+
+| Pantalla | Captura |
+|----------|---------|
+| Registro: cuenta creada | ![Registro](capturas/01-registro.png) |
+| P2: login sin verificar el correo | ![Login sin verificar](capturas/02-login-sin-verificar.png) |
+| Correo verificado con el enlace de la consola | ![Correo verificado](capturas/03-correo-verificado.png) |
+| Panel de usuario normal (sin opciones de admin) | ![Panel usuario](capturas/04-panel-usuario.png) |
+| Configuración 2FA (QR difuminado) | ![QR 2FA](capturas/05-qr-2fa-difuminado.png) |
+| Panel de administrador editando un servicio (Desafío A) | ![Panel admin](capturas/06-panel-admin-edicion.png) |
+| P4: login con 2FA activo y sin código | ![Login sin código](capturas/07-login-2fa-sin-codigo.png) |
+| Recuperación de contraseña solicitada (Desafío B) | ![Recuperación](capturas/08-recuperacion-solicitada.png) |
+| Formulario para restablecer la contraseña | ![Restablecer](capturas/09-restablecer-contrasena.png) |
+| P3: rate limit tras 6 intentos fallidos | ![Rate limit](capturas/10-rate-limit-429.png) |
+| Resultado de `npm run pruebas` (30/30) | ![Pruebas](capturas/11-npm-run-pruebas.png) |
+
 ## Interpretación de los controles
 
 | Control | Qué protege | Qué NO garantiza |
@@ -274,3 +293,14 @@ ni se reenvíe al recargar.
 - Se trabaja en HTTP local: la cookie no lleva `Secure` (se activa con `NODE_ENV=production`).
 - El secreto TOTP se guarda en texto plano en la base de datos.
 - El rate limit se guarda en memoria y se aplica por IP.
+- Al restablecer la contraseña no se cierran las sesiones ya abiertas (MemoryStore no permite buscar
+  las sesiones de un usuario).
+
+## Mejoras futuras
+
+- HTTPS con proxy inverso, HSTS y cookie `Secure` (ver [docs/despliegue-seguro.md](docs/despliegue-seguro.md)).
+- Sesiones en MySQL o Redis, con revocación de todas las sesiones al cambiar la contraseña.
+- Cifrar el secreto TOTP y ofrecer códigos de respaldo; permitir desactivar 2FA pidiendo un código.
+- Envío real de correos de verificación y recuperación.
+- Límite de intentos por cuenta además de por IP, y registro de intentos fallidos.
+- Cabeceras de seguridad con `helmet` y usuario de MySQL con permisos mínimos.
